@@ -1,6 +1,6 @@
 # CUT&Tag Snakemake 7 + SLURM Pipeline
 
-Copyright (c) 2026 windobe-falser. All rights reserved.
+Copyright (c) 2026 alser2020. All rights reserved.
 
 这是一个用于转录因子基因组结合位置发现的 CUT&Tag 双端测序数据分析 pipeline。项目基于 Snakemake 7 开发，适用于 SLURM 集群批量投递。pipeline 的核心分析流程如下：
 
