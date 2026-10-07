@@ -1,0 +1,108 @@
+project:
+  name: cuttag_example
+  output_dir: results
+  samples: samples.tsv
+  comparisons: comparisons.tsv
+
+# 可选：填入服务器上已存在的命名 Conda 环境；null 时使用 workflow/envs/*.yaml 创建隔离环境。
+software:
+  conda_envs:
+    core: null
+    homer: null
+    meme: null
+    idr: null
+
+reference:
+  # 仅用于报告；实际一致性由 FASTA/GTF/index/染色体名称检查保证。
+  assembly: B73_RefGen_v5
+  fasta: /absolute/path/to/genome.fa
+  gtf: /absolute/path/to/annotation.gtf
+  # null 表示在 output_dir/reference/ 下根据本次 FASTA 构建索引。
+  bowtie2_index: null
+  effective_genome_size: 2182075994
+  chromosomes: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+analysis:
+  fastp:
+    qualified_quality_phred: 15
+    length_required: 36
+    cut_front: false
+    cut_tail: true
+    cut_window_size: 4
+    cut_mean_quality: 20
+    average_qual: 0
+
+  alignment:
+    mode: end-to-end
+    preset: very-sensitive
+    no_mixed: true
+    no_discordant: true
+    insert_min: 10
+    insert_max: 700
+    mapq_min: 30
+
+  coverage:
+    # BigWig 轨迹分辨率（bp），不是 QC 汇总窗口。
+    bin_size: 25
+    smooth_length: 50
+    extend_reads: 200
+    normalize_using: RPGC
+    ignore_duplicates: false
+
+  qc:
+    # multiBigwigSummary；相关性/PCA 共用该矩阵（bp）。
+    # 全基因组 25 bp 汇总矩阵可能较大，注意内存和运行时间。
+    summary_bin_size: 25
+    correlation_method: spearman
+    # plotFingerprint 直接从 BAM 抽样的窗口宽度（bp）。
+    fingerprint_bin_size: 25
+    # 抽样窗口数量；不是 bin 宽度。
+    fingerprint_samples: 100000
+    tss_before: 3000
+    tss_after: 3000
+    # computeMatrix 的 TSS 窗口分辨率（bp），输入为 BigWig。
+    tss_bin_size: 25
+
+  macs3:
+    format: BAMPE
+    qvalue: 0.05
+    call_summits: true
+    trackline: false
+    broad: false
+    keep_dup: auto
+
+  idr:
+    # auto: treatment 恰好有两个 biological replicates 时运行；off: 全部关闭。
+    mode: auto
+    threshold: 0.05
+    rank: p.value
+
+  annotation:
+    enabled: false
+    method: homer
+    promoter_max_abs_tss_distance: 5000
+
+  motif:
+    enabled: true
+    methods: [homer, memechip]
+    # all: 所有 MACS3 summits；promoter: 需要 annotation.enabled=true。
+    input_scope: all
+    homer:
+      size: 200
+      lengths: [6, 8, 10, 12]
+    memechip:
+      flank: 100
+      # 0 对应 -ccut 0：不额外进行中心裁剪；不是显著性阈值。
+      center_cut: 0
+      min_width: 6
+      max_width: 12
+      meme_p: 16
+      meme_nmotifs: 3
+      streme_nmotifs: 0
+      known_motif_db: null
+
+outputs:
+  keep_trimmed_reads: true
+  package:
+    enabled: true
+    archive: cuttag_results.tar.gz

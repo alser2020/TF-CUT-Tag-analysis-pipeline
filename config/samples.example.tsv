@@ -1,0 +1,5 @@
+sample_id	group_id	replicate	label	r1	r2	batch	pair_id	description
+TF_R1	TF	1	TF rep1	data/TF_R1_1.fq.gz	data/TF_R1_2.fq.gz	B1	P1	transient TF replicate 1
+TF_R2	TF	2	TF rep2	data/TF_R2_1.fq.gz	data/TF_R2_2.fq.gz	B1	P2	transient TF replicate 2
+IgG_R1	IgG	1	IgG rep1	data/IgG_R1_1.fq.gz	data/IgG_R1_2.fq.gz	B1	P1	control replicate 1
+IgG_R2	IgG	2	IgG rep2	data/IgG_R2_1.fq.gz	data/IgG_R2_2.fq.gz	B1	P2	control replicate 2

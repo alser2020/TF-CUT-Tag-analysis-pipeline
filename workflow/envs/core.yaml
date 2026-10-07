@@ -1,0 +1,12 @@
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.10
+  - fastp
+  - bowtie2
+  - samtools
+  - deeptools
+  - macs3
+  - multiqc
+  - bedtools

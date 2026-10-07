@@ -1,0 +1,14 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: One biological replicate in samples.tsv
+type: object
+required: [sample_id, group_id, replicate, r1, r2]
+properties:
+  sample_id: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+  group_id: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+  replicate: {type: integer, minimum: 1}
+  label: {type: string}
+  r1: {type: string, minLength: 1}
+  r2: {type: string, minLength: 1}
+  batch: {type: string}
+  pair_id: {type: string}
+  description: {type: string}

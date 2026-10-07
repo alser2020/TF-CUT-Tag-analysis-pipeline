@@ -1,0 +1,259 @@
+import csv
+import os
+import shlex
+from collections import defaultdict
+from pathlib import Path
+
+WORKFLOW_DIR = Path(workflow.basedir).resolve()
+PROJECT_DIR = Path.cwd().resolve()
+
+ENV_OVERRIDES = config.get("software", {}).get("conda_envs", {})
+CORE_ENV = ENV_OVERRIDES.get("core") or str(WORKFLOW_DIR / "envs" / "core.yaml")
+HOMER_ENV = ENV_OVERRIDES.get("homer") or str(WORKFLOW_DIR / "envs" / "homer.yaml")
+MEME_ENV = ENV_OVERRIDES.get("meme") or str(WORKFLOW_DIR / "envs" / "meme.yaml")
+IDR_ENV = ENV_OVERRIDES.get("idr") or str(WORKFLOW_DIR / "envs" / "idr.yaml")
+SCRIPT_DIR = WORKFLOW_DIR.parent / "scripts"
+
+
+def project_path(value):
+    value = os.path.expandvars(os.path.expanduser(str(value)))
+    path = Path(value)
+    return path.resolve() if path.is_absolute() else (PROJECT_DIR / path).resolve()
+
+
+def read_tsv(path):
+    with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+        return [
+            {key: (value or "").strip() for key, value in row.items()}
+            for row in csv.DictReader(handle, delimiter="\t")
+        ]
+
+
+PROJECT = config["project"]
+REFERENCE = config["reference"]
+ANALYSIS = config["analysis"]
+OUTPUTS = config["outputs"]
+
+OUTPUT_DIR = project_path(PROJECT["output_dir"])
+SAMPLE_SHEET = project_path(PROJECT["samples"])
+COMPARISON_SHEET = project_path(PROJECT["comparisons"])
+REFERENCE_FASTA = project_path(REFERENCE["fasta"])
+REFERENCE_GTF = project_path(REFERENCE["gtf"])
+
+sample_rows = read_tsv(SAMPLE_SHEET)
+comparison_rows = read_tsv(COMPARISON_SHEET)
+
+samples = [row["sample_id"] for row in sample_rows]
+sample_by_id = {row["sample_id"]: row for row in sample_rows}
+sample_labels = {row["sample_id"]: row.get("label") or row["sample_id"] for row in sample_rows}
+
+group_samples = defaultdict(list)
+for row in sample_rows:
+    group_samples[row["group_id"]].append(row["sample_id"])
+for group_id in group_samples:
+    group_samples[group_id].sort(key=lambda sample: int(sample_by_id[sample]["replicate"]))
+groups = sorted(group_samples)
+
+comparisons = [row["comparison_id"] for row in comparison_rows]
+comparison_by_id = {row["comparison_id"]: row for row in comparison_rows}
+
+idr_mode = ANALYSIS["idr"]["mode"]
+comparisons_with_idr = []
+if idr_mode == "auto":
+    for comp in comparisons:
+        treatment = comparison_by_id[comp]["treatment_group"]
+        replicate_count = len(group_samples[treatment])
+        if replicate_count == 2:
+            comparisons_with_idr.append(comp)
+        elif replicate_count < 2:
+            print(f"[IDR] {comp}: treatment 只有 {replicate_count} 个重复，跳过")
+        else:
+            print(f"[IDR] {comp}: treatment 有 {replicate_count} 个重复，当前版本不截取前两个，跳过")
+
+DIRS = {
+    "reference": OUTPUT_DIR / "00.reference",
+    "trimmed": OUTPUT_DIR / "01.trimmed_reads",
+    "mapped": OUTPUT_DIR / "02.mapped",
+    "merged": OUTPUT_DIR / "03.merged",
+    "deeptools": OUTPUT_DIR / "04.deeptools",
+    "peaks": OUTPUT_DIR / "05.peaks",
+    "motif": OUTPUT_DIR / "06.motif",
+    "qc": OUTPUT_DIR / "07.qc",
+    "logs": OUTPUT_DIR / "logs",
+    "benchmarks": OUTPUT_DIR / "benchmarks",
+}
+DIRS = {key: str(value) for key, value in DIRS.items()}
+
+REFERENCE_LINK = os.path.join(DIRS["reference"], "genome.fa")
+REFERENCE_FAI = f"{REFERENCE_LINK}.fai"
+REFERENCE_SIZES = os.path.join(DIRS["reference"], "genome.sizes")
+
+configured_index = REFERENCE.get("bowtie2_index")
+if configured_index:
+    BOWTIE2_INDEX_PREFIX = str(project_path(configured_index))
+    BOWTIE2_INDEX_ALLOW_BUILD = False
+else:
+    BOWTIE2_INDEX_PREFIX = os.path.join(DIRS["reference"], "bowtie2", "genome")
+    BOWTIE2_INDEX_ALLOW_BUILD = True
+BOWTIE2_INDEX_READY = os.path.join(DIRS["reference"], "bowtie2_index.ready")
+
+FASTP = ANALYSIS["fastp"]
+ALIGNMENT = ANALYSIS["alignment"]
+COVERAGE = ANALYSIS["coverage"]
+QC = ANALYSIS["qc"]
+MACS3 = ANALYSIS["macs3"]
+IDR = ANALYSIS["idr"]
+ANNOTATION = ANALYSIS["annotation"]
+MOTIF = ANALYSIS["motif"]
+KEEP_TRIMMED = OUTPUTS.get("keep_trimmed_reads", True)
+PACKAGE = OUTPUTS.get("package", {}) or {}
+PACKAGE_ENABLED = bool(PACKAGE.get("enabled", False))
+PACKAGE_ARCHIVE = project_path(PACKAGE.get("archive", "cuttag_results.tar.gz"))
+PACKAGE_MANIFEST = f"{PACKAGE_ARCHIVE}.manifest.txt"
+PACKAGE_CHECKSUM = f"{PACKAGE_ARCHIVE}.sha256"
+
+BOWTIE2_FLAGS = [
+    "--end-to-end" if ALIGNMENT["mode"] == "end-to-end" else "--local",
+    "--" + ALIGNMENT["preset"],
+]
+if ALIGNMENT.get("no_mixed", False):
+    BOWTIE2_FLAGS.append("--no-mixed")
+if ALIGNMENT.get("no_discordant", False):
+    BOWTIE2_FLAGS.append("--no-discordant")
+BOWTIE2_FLAGS = " ".join(BOWTIE2_FLAGS)
+
+CHROMOSOMES = " ".join(shlex.quote(chrom) for chrom in REFERENCE["chromosomes"])
+IGNORE_DUPLICATES_FLAG = "--ignoreDuplicates" if COVERAGE.get("ignore_duplicates", False) else ""
+TRACKLINE_FLAG = "--trackline" if MACS3.get("trackline", False) else ""
+CALL_SUMMITS_FLAG = "--call-summits" if MACS3.get("call_summits", True) else ""
+HOMER_LENGTHS = ",".join(str(value) for value in MOTIF["homer"]["lengths"])
+IDR_SORT_COLUMN = {"signal.value": 7, "p.value": 8}[IDR["rank"]]
+HOMER_PREPARSE_MARKER = os.path.join(
+    DIRS["reference"],
+    "preparsed",
+    f"genome.fa.{MOTIF['homer']['size']}.ready",
+)
+
+
+def sample_fastq(wildcards, read):
+    return str(project_path(sample_by_id[wildcards.sample][read]))
+
+
+def group_bams(wildcards):
+    return [
+        os.path.join(DIRS["mapped"], sample, f"{sample}.filtered.bam")
+        for sample in group_samples[wildcards.group]
+    ]
+
+
+def comparison_samples(comp):
+    row = comparison_by_id[comp]
+    return group_samples[row["treatment_group"]] + group_samples[row["control_group"]]
+
+
+def comparison_sample_bams(wildcards):
+    return [
+        os.path.join(DIRS["mapped"], sample, f"{sample}.filtered.bam")
+        for sample in comparison_samples(wildcards.comp)
+    ]
+
+
+def comparison_sample_bais(wildcards):
+    return [f"{path}.bai" for path in comparison_sample_bams(wildcards)]
+
+
+def comparison_sample_bigwigs(wildcards):
+    return [
+        os.path.join(DIRS["deeptools"], "sample_bigwig", f"{sample}.bw")
+        for sample in comparison_samples(wildcards.comp)
+    ]
+
+
+def comparison_labels(wildcards):
+    return " ".join(shlex.quote(sample_labels[sample]) for sample in comparison_samples(wildcards.comp))
+
+
+def macs3_inputs(wildcards):
+    row = comparison_by_id[wildcards.comp]
+    treatment = row["treatment_group"]
+    control = row["control_group"]
+    return {
+        "treatment": os.path.join(DIRS["merged"], treatment, f"{treatment}.bam"),
+        "control": os.path.join(DIRS["merged"], control, f"{control}.bam"),
+    }
+
+
+def idr_control_bam(wildcards):
+    control = comparison_by_id[wildcards.comp]["control_group"]
+    return os.path.join(DIRS["merged"], control, f"{control}.bam")
+
+
+def idr_replicate_peaks(wildcards):
+    treatment = comparison_by_id[wildcards.comp]["treatment_group"]
+    return [
+        os.path.join(DIRS["peaks"], wildcards.comp, "idr", f"{sample}_peaks.narrowPeak")
+        for sample in group_samples[treatment]
+    ]
+
+
+def motif_input_bed(wildcards):
+    if MOTIF["input_scope"] == "promoter":
+        return os.path.join(DIRS["peaks"], wildcards.comp, f"{wildcards.comp}.promoter_summits.bed")
+    return os.path.join(DIRS["peaks"], wildcards.comp, f"{wildcards.comp}_summits.bed")
+
+
+def analysis_targets(_wildcards=None):
+    targets = []
+    targets += expand(os.path.join(DIRS["merged"], "{group}", "{group}.bam.bai"), group=groups)
+    targets += expand(os.path.join(DIRS["merged"], "{group}", "{group}.flagstat.txt"), group=groups)
+    targets += expand(os.path.join(DIRS["deeptools"], "group_bigwig", "{group}.bw"), group=groups)
+    targets += expand(os.path.join(DIRS["deeptools"], "{comp}", "fingerprint.png"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["deeptools"], "{comp}", "correlation_heatmap.png"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["deeptools"], "{comp}", "PCA.png"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["deeptools"], "{comp}", "TSS_heatmap.png"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["deeptools"], "{comp}", "TSS_profile.png"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["peaks"], "{comp}", "{comp}_peaks.narrowPeak"), comp=comparisons)
+    targets += expand(os.path.join(DIRS["peaks"], "{comp}", "{comp}_summits.bed"), comp=comparisons)
+    if comparisons_with_idr:
+        targets += expand(os.path.join(DIRS["peaks"], "{comp}", "idr", "idr.tsv"), comp=comparisons_with_idr)
+        targets += expand(os.path.join(DIRS["peaks"], "{comp}", "idr", "idr.tsv.png"), comp=comparisons_with_idr)
+    if ANNOTATION.get("enabled", False):
+        targets += expand(os.path.join(DIRS["peaks"], "{comp}", "{comp}.annotation.tsv"), comp=comparisons)
+        targets += expand(os.path.join(DIRS["peaks"], "{comp}", "{comp}.promoter.bed"), comp=comparisons)
+        targets += expand(os.path.join(DIRS["peaks"], "{comp}", "{comp}.promoter_summits.bed"), comp=comparisons)
+    if MOTIF.get("enabled", False):
+        if "homer" in MOTIF["methods"]:
+            targets += expand(os.path.join(DIRS["motif"], "{comp}", "HOMER"), comp=comparisons)
+        if "memechip" in MOTIF["methods"]:
+            targets += expand(os.path.join(DIRS["motif"], "{comp}", "MEME-ChIP", ".complete"), comp=comparisons)
+    targets += [
+        os.path.join(DIRS["qc"], "multiqc_report.html"),
+        os.path.join(DIRS["qc"], "multiqc_report_data.zip"),
+    ]
+    return targets
+
+
+def all_targets():
+    targets = analysis_targets()
+    if PACKAGE_ENABLED:
+        targets += [PACKAGE_ARCHIVE, PACKAGE_MANIFEST, PACKAGE_CHECKSUM]
+    return targets
+
+
+wildcard_constraints:
+    sample="[A-Za-z0-9][A-Za-z0-9._-]*",
+    group="[A-Za-z0-9][A-Za-z0-9._-]*",
+    comp="[A-Za-z0-9][A-Za-z0-9._-]*"
+
+
+rule all:
+    input:
+        all_targets()
+
+
+include: "rules/preprocess.smk"
+include: "rules/qc.smk"
+include: "rules/peaks.smk"
+include: "rules/annotation.smk"
+include: "rules/motif.smk"
+include: "rules/report.smk"

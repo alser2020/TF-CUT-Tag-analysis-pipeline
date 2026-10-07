@@ -1,0 +1,6 @@
+jobs: 20
+use-conda: true
+rerun-incomplete: true
+latency-wait: 60
+printshellcmds: true
+keep-going: true

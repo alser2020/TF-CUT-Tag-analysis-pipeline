@@ -1,0 +1,187 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: CUT&Tag pipeline configuration
+type: object
+additionalProperties: false
+required: [project, reference, analysis, outputs]
+properties:
+  project:
+    type: object
+    additionalProperties: false
+    required: [name, output_dir, samples, comparisons]
+    properties:
+      name: {type: string, minLength: 1}
+      output_dir: {type: string, minLength: 1}
+      samples: {type: string, minLength: 1}
+      comparisons: {type: string, minLength: 1}
+  reference:
+    type: object
+    additionalProperties: false
+    required: [assembly, fasta, gtf, bowtie2_index, effective_genome_size, chromosomes]
+    properties:
+      assembly: {type: string, minLength: 1}
+      fasta: {type: string, minLength: 1}
+      gtf: {type: string, minLength: 1}
+      bowtie2_index:
+        oneOf:
+          - {type: "null"}
+          - {type: string, minLength: 1}
+      effective_genome_size: {type: integer, minimum: 1}
+      chromosomes:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items: {type: string, minLength: 1}
+  software:
+    type: object
+    additionalProperties: false
+    properties:
+      conda_envs:
+        type: object
+        additionalProperties: false
+        properties:
+          core:
+            oneOf:
+              - {type: "null"}
+              - {type: string, minLength: 1}
+          homer:
+            oneOf:
+              - {type: "null"}
+              - {type: string, minLength: 1}
+          meme:
+            oneOf:
+              - {type: "null"}
+              - {type: string, minLength: 1}
+          idr:
+            oneOf:
+              - {type: "null"}
+              - {type: string, minLength: 1}
+  analysis:
+    type: object
+    additionalProperties: false
+    required: [fastp, alignment, coverage, qc, macs3, idr, annotation, motif]
+    properties:
+      fastp:
+        type: object
+        additionalProperties: false
+        required: [qualified_quality_phred, length_required, cut_front, cut_tail, cut_window_size, cut_mean_quality, average_qual]
+        properties:
+          qualified_quality_phred: {type: integer, minimum: 0}
+          length_required: {type: integer, minimum: 1}
+          cut_front: {type: boolean}
+          cut_tail: {type: boolean}
+          cut_window_size: {type: integer, minimum: 1}
+          cut_mean_quality: {type: integer, minimum: 0}
+          average_qual: {type: integer, minimum: 0}
+      alignment:
+        type: object
+        additionalProperties: false
+        required: [mode, preset, no_mixed, no_discordant, insert_min, insert_max, mapq_min]
+        properties:
+          mode: {enum: [end-to-end, local]}
+          preset: {enum: [very-fast, fast, sensitive, very-sensitive]}
+          no_mixed: {type: boolean}
+          no_discordant: {type: boolean}
+          insert_min: {type: integer, minimum: 0}
+          insert_max: {type: integer, minimum: 1}
+          mapq_min: {type: integer, minimum: 0}
+      coverage:
+        type: object
+        additionalProperties: false
+        required: [bin_size, smooth_length, extend_reads, normalize_using, ignore_duplicates]
+        properties:
+          bin_size: {type: integer, minimum: 1}
+          smooth_length: {type: integer, minimum: 1}
+          extend_reads: {type: integer, minimum: 1}
+          normalize_using: {enum: [RPGC, CPM, BPM, RPKM, None]}
+          ignore_duplicates: {type: boolean}
+      qc:
+        type: object
+        additionalProperties: false
+        required: [summary_bin_size, correlation_method, fingerprint_bin_size, fingerprint_samples, tss_before, tss_after, tss_bin_size]
+        properties:
+          summary_bin_size: {type: integer, minimum: 1}
+          correlation_method: {enum: [pearson, spearman]}
+          fingerprint_bin_size: {type: integer, minimum: 1}
+          fingerprint_samples: {type: integer, minimum: 1}
+          tss_before: {type: integer, minimum: 0}
+          tss_after: {type: integer, minimum: 0}
+          tss_bin_size: {type: integer, minimum: 1}
+      macs3:
+        type: object
+        additionalProperties: false
+        required: [format, qvalue, call_summits, trackline, broad, keep_dup]
+        properties:
+          format: {enum: [BAMPE]}
+          qvalue: {type: number, exclusiveMinimum: 0, maximum: 1}
+          call_summits: {const: true}
+          trackline: {type: boolean}
+          broad: {const: false}
+          keep_dup:
+            oneOf:
+              - {const: auto}
+              - {type: integer, minimum: 1}
+      idr:
+        type: object
+        additionalProperties: false
+        required: [mode, threshold, rank]
+        properties:
+          mode: {enum: [auto, off]}
+          threshold: {type: number, exclusiveMinimum: 0, maximum: 1}
+          rank: {enum: [p.value, signal.value]}
+      annotation:
+        type: object
+        additionalProperties: false
+        required: [enabled, method, promoter_max_abs_tss_distance]
+        properties:
+          enabled: {type: boolean}
+          method: {const: homer}
+          promoter_max_abs_tss_distance: {type: integer, minimum: 0}
+      motif:
+        type: object
+        additionalProperties: false
+        required: [enabled, methods, input_scope, homer, memechip]
+        properties:
+          enabled: {type: boolean}
+          methods:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items: {enum: [homer, memechip]}
+          input_scope: {enum: [all, promoter]}
+          homer:
+            type: object
+            additionalProperties: false
+            required: [size, lengths]
+            properties:
+              size: {type: integer, minimum: 1}
+              lengths:
+                type: array
+                minItems: 1
+                uniqueItems: true
+                items: {type: integer, minimum: 4}
+          memechip:
+            type: object
+            additionalProperties: false
+            required: [flank, center_cut, min_width, max_width, meme_p, meme_nmotifs, streme_nmotifs, known_motif_db]
+            properties:
+              flank: {type: integer, minimum: 1}
+              center_cut: {type: integer, minimum: 0}
+              min_width: {type: integer, minimum: 2}
+              max_width: {type: integer, minimum: 2}
+              meme_p: {type: integer, minimum: 1}
+              meme_nmotifs: {type: integer, minimum: 1}
+              streme_nmotifs: {type: integer, minimum: 0}
+              known_motif_db: {type: [string, 'null']}
+  outputs:
+    type: object
+    additionalProperties: false
+    required: [keep_trimmed_reads]
+    properties:
+      keep_trimmed_reads: {type: boolean}
+      package:
+        type: object
+        additionalProperties: false
+        required: [enabled, archive]
+        properties:
+          enabled: {type: boolean}
+          archive: {type: string, minLength: 1}

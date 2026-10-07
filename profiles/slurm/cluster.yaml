@@ -1,0 +1,99 @@
+# Site-specific fields account/partition can be set here or per rule.
+__default__:
+  account: null
+  partition: null
+  time: "01:00:00"
+  mem_mb: 4000
+  log_dir: "slurm_logs"
+
+prepare_reference:
+  time: "00:20:00"
+  mem_mb: 4000
+
+bowtie2_index:
+  time: "04:00:00"
+  mem_mb: 64000
+
+fastp:
+  time: "04:00:00"
+  mem_mb: 16000
+
+bowtie2_align:
+  time: "06:00:00"
+  mem_mb: 64000
+
+clean_bam:
+  time: "04:00:00"
+  mem_mb: 32000
+
+samtools_merge:
+  time: "02:00:00"
+  mem_mb: 32000
+
+samtools_stats:
+  time: "00:20:00"
+  mem_mb: 4000
+
+bam_to_bigwig_group:
+  time: "02:00:00"
+  mem_mb: 32000
+
+bam_to_bigwig_sample:
+  time: "02:00:00"
+  mem_mb: 32000
+
+sample_correlation:
+  time: "02:00:00"
+  mem_mb: 64000
+
+plot_fingerprint:
+  time: "02:00:00"
+  mem_mb: 64000
+
+tss_enrichment:
+  time: "04:00:00"
+  mem_mb: 64000
+
+macs3_peak:
+  time: "04:00:00"
+  mem_mb: 16000
+
+macs3_idr_replicate:
+  time: "04:00:00"
+  mem_mb: 16000
+
+idr_analysis:
+  time: "01:00:00"
+  mem_mb: 8000
+
+annotate_peaks:
+  time: "01:00:00"
+  mem_mb: 16000
+
+filter_promoter_peaks:
+  time: "00:20:00"
+  mem_mb: 4000
+
+homer_prepare_genome:
+  time: "02:00:00"
+  mem_mb: 32000
+
+homer_motif:
+  time: "08:00:00"
+  mem_mb: 64000
+
+motif_fasta:
+  time: "00:30:00"
+  mem_mb: 8000
+
+memechip:
+  time: "08:00:00"
+  mem_mb: 128000
+
+multiqc:
+  time: "00:30:00"
+  mem_mb: 8000
+
+package_results:
+  time: "00:30:00"
+  mem_mb: 4000

@@ -1,0 +1,9 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: One treatment-control comparison in comparisons.tsv
+type: object
+required: [comparison_id, treatment_group, control_group]
+properties:
+  comparison_id: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+  treatment_group: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+  control_group: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+  description: {type: string}
