@@ -28,7 +28,9 @@ resolve_pipeline_root() {
 }
 
 PIPELINE_ROOT=$(resolve_pipeline_root)
-CONFIG=${1:?"Usage: sbatch [site options] submit.slurm /absolute/path/config.yaml"}
+CONFIG=${1:?"Usage: sbatch [site options] submit.slurm /absolute/path/config.yaml [Snakemake arguments...]"}
+shift
+EXTRA_ARGS=("$@")
 
 # 在此之前确保 Snakemake 7 已位于 PATH；也可按集群实际情况加载 module/conda。
 command -v snakemake >/dev/null 2>&1 || {
@@ -40,4 +42,8 @@ command -v snakemake >/dev/null 2>&1 || {
   exit 1
 }
 
-exec "$PIPELINE_ROOT/run.sh" --config "$CONFIG"
+if ((${#EXTRA_ARGS[@]})); then
+  exec "$PIPELINE_ROOT/run.sh" --config "$CONFIG" -- "${EXTRA_ARGS[@]}"
+else
+  exec "$PIPELINE_ROOT/run.sh" --config "$CONFIG"
+fi

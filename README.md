@@ -1182,7 +1182,103 @@ snakemake --unlock \
 
 不要直接删除整个 `results/`。
 
-### 12.5 `PENDING (Dependency)`
+### 12.5 通过 `sbatch` 恢复失败或中断的 pipeline
+
+pipeline driver 失败、某个子任务 `TIMEOUT`/`FAILED` 或用户主动取消后，**不要重新创建项目，也不要删除整个 `results/`**。修正资源、环境或输入问题后，在同一个项目目录重新提交 driver 即可。profile 默认启用：
+
+```yaml
+rerun-incomplete: true
+```
+
+因此 Snakemake 会复用已经成功完成且元数据有效的输出，只重跑 incomplete/missing 输出及其下游依赖。
+
+先确认旧 driver 和子任务已经结束：
+
+```bash
+PROJECT=/absolute/path/to/project
+RELEASE=/absolute/path/to/cuttag_pipeline_release
+
+squeue -u "$USER"
+ps -fu "$USER" | grep -E '[s]nakemake|[s]ubmit.slurm' || true
+```
+
+确认没有旧 driver 后，激活 Snakemake 7，并从项目目录提交新的 driver：
+
+```bash
+source /path/to/miniconda3/etc/profile.d/conda.sh
+conda activate snakemake7
+cd "$PROJECT"
+
+RERUN_JOB=$(sbatch --parsable \
+  --job-name=cuttag_rerun \
+  --account=YOUR_ACCOUNT \
+  --partition=YOUR_PARTITION \
+  --output="$PROJECT/cuttag_rerun.%j.out" \
+  --error="$PROJECT/cuttag_rerun.%j.err" \
+  "$RELEASE/submit.slurm" \
+  "$PROJECT/config.yaml")
+echo "Rerun driver: $RERUN_JOB"
+```
+
+提交后检查：
+
+```bash
+squeue -j "$RERUN_JOB"
+sacct -j "$RERUN_JOB" \
+  --format=JobID,JobName,State,ExitCode,Elapsed,Start,End,NodeList
+```
+
+提交后不要再启动第二个 driver；否则两个 Snakemake 进程可能同时管理同一个项目目录。`cuttag_rerun.<JOBID>.out/.err` 默认会写入项目目录，因为示例先执行了 `cd "$PROJECT"`。
+
+#### 只重跑特定 rule 或目标
+
+`submit.slurm` 会把配置文件后的参数转发给 `run.sh`，因此可以通过 `sbatch` 传递 Snakemake 参数。先 dry-run，再正式执行：
+
+```bash
+# 例如强制重跑某个 rule 的全部实例
+sbatch \
+  --account=YOUR_ACCOUNT \
+  --partition=YOUR_PARTITION \
+  --job-name=cuttag_force_memechip \
+  --output="$PROJECT/cuttag_force_memechip.%j.out" \
+  --error="$PROJECT/cuttag_force_memechip.%j.err" \
+  "$RELEASE/submit.slurm" \
+  "$PROJECT/config.yaml" \
+  --dry-run --forcerun memechip
+```
+
+确认 dry-run 的目标和影响范围正确后，去掉 `--dry-run`：
+
+```bash
+sbatch \
+  --account=YOUR_ACCOUNT \
+  --partition=YOUR_PARTITION \
+  --job-name=cuttag_force_memechip \
+  --output="$PROJECT/cuttag_force_memechip.%j.out" \
+  --error="$PROJECT/cuttag_force_memechip.%j.err" \
+  "$RELEASE/submit.slurm" \
+  "$PROJECT/config.yaml" \
+  --forcerun memechip
+```
+
+如果只是某个比较的结果损坏，优先指定**绝对输出文件目标**而不是强制整个 rule。先提交 dry-run 检查：
+
+```bash
+sbatch \
+  --account=YOUR_ACCOUNT \
+  --partition=YOUR_PARTITION \
+  --job-name=cuttag_target_dryrun \
+  --output="$PROJECT/cuttag_target_dryrun.%j.out" \
+  --error="$PROJECT/cuttag_target_dryrun.%j.err" \
+  "$RELEASE/submit.slurm" \
+  "$PROJECT/config.yaml" \
+  --dry-run \
+  "$PROJECT/results/06.motif/TF_vs_IgG/MEME-ChIP/.complete"
+```
+
+确认 dry-run 只涉及预期目标及其必要依赖后，将命令中的 `--dry-run` 删除，再提交正式目标任务。`submit.slurm` 会将配置文件后的额外参数转交给 `run.sh`/Snakemake。提交前确认没有另一个 driver 正在管理同一项目。不要在登录节点直接运行实际分析程序。`--forcerun` 会覆盖 Snakemake 对已有输出的正常判断，可能导致下游重算，必须先检查 dry-run。
+
+### 12.6 `PENDING (Dependency)`
 
 这通常不是报错，表示该任务等待上游任务完成：
 
@@ -1191,7 +1287,7 @@ scontrol show job JOBID
 squeue -j JOBID -o "%.18i %.45j %.9T %R"
 ```
 
-### 12.6 TIMEOUT 或 OOM
+### 12.7 TIMEOUT 或 OOM
 
 检查：
 
@@ -1209,7 +1305,7 @@ mem_mb: 64000
 
 不要只增加全局资源，因为不同 rule 的资源需求差异很大。
 
-### 12.7 HOMER 出现 `CXXABI` 或 `Illegal division by zero`
+### 12.8 HOMER 出现 `CXXABI` 或 `Illegal division by zero`
 
 检查：
 
@@ -1225,7 +1321,7 @@ grep -E 'CXXABI_|Illegal division by zero|Might have something wrong' \
 - 优先重建 HOMER 环境；
 - 不要把错误日志当作成功结果。
 
-### 12.8 MEME 的 Ghostscript 警告
+### 12.9 MEME 的 Ghostscript 警告
 
 例如：
 
@@ -1244,7 +1340,7 @@ meme.txt
 
 先检查核心输出是否非空，不要只依据该警告判定整个 rule 失败。
 
-### 12.9 只想测试某个 rule
+### 12.10 只想测试某个 rule
 
 `--until` 是 DAG 范围限制，不是“仅运行一个样本”的开关；可能包含多个比较及尚缺失的上游任务。仅测试一个 comparison 时，指定 **绝对目标路径**，并先 dry-run：
 
@@ -1257,7 +1353,7 @@ meme.txt
 
 实际运行时去掉 `--dry-run`，且不要加 `--local`，由 profile 提交计算任务。此方式会让 driver 常驻当前 shell；如站点不允许，可写一个独立 driver job 在计算节点调用同一命令。默认 `submit.slurm` 不转发单目标参数。
 
-### 12.10 如何停止任务
+### 12.11 如何停止任务
 
 先停止 driver，再确认子作业：
 
